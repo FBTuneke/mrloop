@@ -12,6 +12,8 @@ static int mrfd;
 static char tmp[32*1024];
 static int tmplen = 32*1024;
 static int num_sqes = 0;
+uint64_t nr_of_sqes = 0;
+uint64_t nr_of_read_sqes = 0;
 
 /*
 static void print_buffer( char* b, int len ) {
@@ -81,6 +83,7 @@ void _urpoll( mr_loop_t *loop, int fd, mr_event_t *ev ) {
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_poll_add( sqe, fd, POLLIN );
+  nr_of_sqes++;
   sqe->user_data = (unsigned long)ev;
   io_uring_submit(loop->ring);
 
@@ -96,6 +99,7 @@ void mr_add_write_callback( mr_loop_t *loop, mr_write_cb *cb, void *conn, int fd
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_poll_add( sqe, fd, POLLOUT );
+  nr_of_sqes++;
   sqe->user_data = (unsigned long)ev;
   io_uring_submit(loop->ring);
   
@@ -110,6 +114,7 @@ void mr_add_read_callback( mr_loop_t *loop, mr_write_cb *cb, void *conn, int fd 
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_poll_add( sqe, fd, POLLIN );
+  nr_of_sqes++;
   sqe->user_data = (unsigned long)ev;
   io_uring_submit(loop->ring);
   
@@ -122,6 +127,7 @@ void _addTimer( mr_loop_t *loop, mr_event_t *ev ) {
   io_uring_prep_poll_add( sqe, ev->fd, POLLIN );
   io_uring_sqe_set_data(sqe, ev);
   io_uring_submit(loop->ring);
+
 }
 
 
@@ -131,9 +137,11 @@ void _read( mr_loop_t *loop, mr_event_t *ev ) {
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_readv(sqe, rdev->fd, &(rdev->iov), 1, 0);
+  nr_of_read_sqes++;
+  nr_of_sqes++;
   sqe->user_data = (unsigned long)rdev;
 
-  io_uring_submit(loop->ring); 
+  io_uring_submit(loop->ring);
 
 }
 
@@ -142,12 +150,13 @@ void _accept( mr_loop_t *loop, mr_event_t *ev ) {
 
   struct sockaddr_in addr;
   socklen_t len;
-  int cfd = accept(ev->fd, (struct sockaddr*)&addr, &len);
+//   int cfd = accept(ev->fd, (struct sockaddr*)&addr, &len);
+  int cfd = accept4(ev->fd, NULL, NULL, SOCK_NONBLOCK);
 
-  if (fcntl(cfd, F_SETFL, fcntl(cfd, F_GETFD,0) | O_NONBLOCK) == -1) {
-    printf("mrloop: _accept set non blocking error : %d %s...\n", errno, strerror(errno));
-    exit(EXIT_FAILURE);
-  }
+//   if (fcntl(cfd, F_SETFL, fcntl(cfd, F_GETFD,0) | O_NONBLOCK) == -1) {
+//     printf("mrloop: _accept set non blocking error : %d %s...\n", errno, strerror(errno));
+//     exit(EXIT_FAILURE);
+//   }
 
   if (cfd != -1) {
   //while ((cfd = accept(ev->fd, (struct sockaddr*)&addr, &len)) != -1) {
@@ -439,6 +448,7 @@ void mr_writev( mr_loop_t *loop, int fd, struct iovec *iovs, int cnt ) {
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_writev(sqe, fd, iovs, cnt, 0);
+  nr_of_sqes++;
   sqe->user_data = 0;
   num_sqes += 1;
   if ( num_sqes > 64 ) { io_uring_submit(loop->ring); num_sqes = 0; }
@@ -449,6 +459,7 @@ void mr_writevf( mr_loop_t *loop, int fd, struct iovec *iovs, int cnt ) {
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_writev(sqe, fd, iovs, cnt, 0);
+  nr_of_sqes++;
   sqe->user_data = 0;
   io_uring_submit(loop->ring); 
   num_sqes = 0;
@@ -465,6 +476,7 @@ void mr_writevcb( mr_loop_t *loop, int fd, struct iovec *iovs, int cnt, void *us
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_writev(sqe, fd, iovs, cnt, 0);
+  nr_of_sqes++;
   sqe->user_data = (unsigned long)ev;
   num_sqes += 1;
   if ( num_sqes > 64 ) { io_uring_submit(loop->ring); num_sqes = 0; }
@@ -481,6 +493,8 @@ void mr_readvcb( mr_loop_t *loop, int fd, struct iovec *iovs, int cnt, off_t off
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_readv(sqe, fd, iovs, cnt, offset);
+  nr_of_read_sqes++;
+  nr_of_sqes++;
   sqe->user_data = (unsigned long)ev;
 
   num_sqes += 1;
@@ -492,6 +506,7 @@ void mr_write( mr_loop_t *loop, int fd, const void *buf, unsigned nbytes, off_t 
 
   struct io_uring_sqe *sqe = io_uring_get_sqe(loop->ring);
   io_uring_prep_write_fixed(sqe, fd, buf, nbytes, offset, 0);
+  nr_of_sqes++;
   sqe->user_data = 0;
   io_uring_submit(loop->ring); 
   num_sqes = 0;

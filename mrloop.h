@@ -28,6 +28,8 @@
 
 #define MAX_CONN 1024
 
+extern uint64_t nr_of_sqes;
+extern uint64_t nr_of_read_sqes;
 
 typedef struct mr_event_s mr_event_t;
 
